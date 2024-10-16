@@ -58,3 +58,16 @@ func GetProductById(c *gin.Context) {
 
 	c.JSON(http.StatusOK, product)
 }
+
+func GetProducts(c *gin.Context) {
+	var products []models.Product // Slice to hold the products array
+
+	// Retrieve all products from the database
+	if err := database.DB.Find(&products).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve products"})
+		log.Println(err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, products)
+}
