@@ -71,3 +71,32 @@ func GetProducts(c *gin.Context) {
 
 	c.JSON(http.StatusOK, products)
 }
+
+func DeleteProduct(c *gin.Context) {
+	// Get the product ID from URL parameters
+	productIdStr := c.Param("id")
+
+	// Validate that the ID is an unsigned integer
+	productId, err := strconv.ParseUint(productIdStr, 10, 0) // set base:10 for decimal and bitSize:0 auto size
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product ID format"})
+		return
+	}
+
+	// Attempt to delete the product from the database
+	result := database.DB.Delete(&models.Product{}, productId)
+
+	// Check if the product was found and deleted
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not delete product"})
+		log.Println(result.Error.Error())
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Product deleted successfully"})
+}
