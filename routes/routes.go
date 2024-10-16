@@ -6,5 +6,6 @@ import (
 )
 
 func SetupRoutes(r *gin.Engine) {
+	r.GET("/products/:id", controllers.GetProductById)
 	r.POST("/products", controllers.CreateProduct)
 }
