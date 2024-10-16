@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"products-api/database"
 	"products-api/models"
+	"products-api/routes"
 )
 
 func main() {
@@ -20,6 +21,9 @@ func main() {
 	router.Handle("GET", "/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+
+	// Set up routes
+	routes.SetupRoutes(router)
 
 	// Start server on default port
 	err := router.Run()
