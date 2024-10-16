@@ -1,18 +1,37 @@
 package main
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
+	"log"
+	"net/http"
+	"products-api/database"
+	"products-api/models"
 )
 
 func main() {
 	router := gin.Default()
+
+	// Initialize database connection
+	database.ConnectDB()
+
+	// Perform migration
+	migrateDatabase()
 
 	router.Handle("GET", "/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
 	// Start server on default port
-	router.Run()
+	err := router.Run()
+	if err != nil {
+		log.Fatal("Failed to start the server:", err)
+	}
+}
+
+// migrateDatabase performs database migrations
+func migrateDatabase() {
+	err := database.DB.AutoMigrate(&models.Product{})
+	if err != nil {
+		log.Fatal("Failed to migrate database:", err)
+	}
 }
