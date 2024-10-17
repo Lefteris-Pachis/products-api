@@ -80,13 +80,53 @@ func GetProductById(c *gin.Context) {
 func GetProducts(c *gin.Context) {
 	var products []models.Product // Slice to hold the products array
 
-	// Retrieve all products from the database
-	if err := database.DB.Find(&products).Error; err != nil {
+	// Get query parameters for pagination
+	pageStr := c.Query("page")
+	limitStr := c.Query("limit")
+
+	// Set default values if not provided
+	page := 1   // Default to page 1
+	limit := 10 // Default to 10 items per page
+
+	// Parse the page query parameter
+	if pageStr != "" {
+		parsedPage, err := strconv.Atoi(pageStr)
+		if err != nil || parsedPage <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid page number, must be a positive integer"})
+			return
+		}
+		page = parsedPage
+	}
+
+	// Parse the limit query parameter
+	if limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil || parsedLimit <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid limit, must be a positive integer"})
+			return
+		}
+		limit = parsedLimit
+	}
+
+	var totalProducts int64
+	// Get the total count of products for pagination
+	if err := database.DB.Model(&models.Product{}).Count(&totalProducts).Error; err != nil {
+		handleDBError(c, err, "Could not retrieve product count")
+		return
+	}
+
+	// Retrieve the products with offset and limit for pagination
+	if err := database.DB.Offset((page - 1) * limit).Limit(limit).Find(&products).Error; err != nil {
 		handleDBError(c, err, "Could not retrieve products")
 		return
 	}
 
-	c.JSON(http.StatusOK, products)
+	c.JSON(http.StatusOK, gin.H{
+		"total": totalProducts,
+		"page":  page,
+		"limit": limit,
+		"data":  products,
+	})
 }
 
 func DeleteProduct(c *gin.Context) {
