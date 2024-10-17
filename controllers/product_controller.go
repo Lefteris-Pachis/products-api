@@ -11,17 +11,41 @@ import (
 	"strconv"
 )
 
+// Utility function to parse a product ID from the URL parameters
+func parseProductID(c *gin.Context) (uint64, error) {
+	productIdStr := c.Param("id")
+	// Validate that the ID is an unsigned integer
+	productId, err := strconv.ParseUint(productIdStr, 10, 0) // set base:10 for decimal and bitSize:0 auto size
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product ID format"})
+	}
+	return productId, err
+}
+
+// Utility function to bind JSON to a struct and handle errors
+func bindJSON(c *gin.Context, obj interface{}) bool {
+	if err := c.ShouldBindJSON(obj); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input", "details": err.Error()})
+		return false
+	}
+	return true
+}
+
+// Utility function to respond with an error when a database operation fails
+func handleDBError(c *gin.Context, err error, errorMessage string) {
+	c.JSON(http.StatusInternalServerError, gin.H{"error": errorMessage})
+	log.Println(err.Error())
+}
+
 func CreateProduct(c *gin.Context) {
 	var product models.Product
-	// Bind JSON to product struct
-	if err := c.ShouldBindJSON(&product); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input", "details": err.Error()})
+	if !bindJSON(c, &product) {
 		return
 	}
 
 	// Create product in the database
 	if err := database.DB.Create(&product).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create product", "details": err.Error()})
+		handleDBError(c, err, "Failed to create product")
 		return
 	}
 
@@ -33,13 +57,8 @@ func CreateProduct(c *gin.Context) {
 }
 
 func GetProductById(c *gin.Context) {
-	// Get the product ID from URL parameters
-	productIdStr := c.Param("id")
-
-	// Validate that the ID is an unsigned integer
-	productId, err := strconv.ParseUint(productIdStr, 10, 0) // set base:10 for decimal and bitSize:0 auto size
+	productId, err := parseProductID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product ID format"})
 		return
 	}
 
@@ -50,8 +69,7 @@ func GetProductById(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
 		} else {
 			// Handle other possible database errors
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve product"})
-			log.Println(err.Error())
+			handleDBError(c, err, "Could not retrieve product")
 		}
 		return
 	}
@@ -64,8 +82,7 @@ func GetProducts(c *gin.Context) {
 
 	// Retrieve all products from the database
 	if err := database.DB.Find(&products).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve products"})
-		log.Println(err.Error())
+		handleDBError(c, err, "Could not retrieve products")
 		return
 	}
 
@@ -73,13 +90,8 @@ func GetProducts(c *gin.Context) {
 }
 
 func DeleteProduct(c *gin.Context) {
-	// Get the product ID from URL parameters
-	productIdStr := c.Param("id")
-
-	// Validate that the ID is an unsigned integer
-	productId, err := strconv.ParseUint(productIdStr, 10, 0) // set base:10 for decimal and bitSize:0 auto size
+	productId, err := parseProductID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product ID format"})
 		return
 	}
 
@@ -88,8 +100,7 @@ func DeleteProduct(c *gin.Context) {
 
 	// Check if the product was found and deleted
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not delete product"})
-		log.Println(result.Error.Error())
+		handleDBError(c, result.Error, "Could not delete product")
 		return
 	}
 
@@ -102,13 +113,8 @@ func DeleteProduct(c *gin.Context) {
 }
 
 func UpdateProduct(c *gin.Context) {
-	// Get the product ID from URL parameters
-	productIdStr := c.Param("id")
-
-	// Validate that the ID is an unsigned integer
-	productId, err := strconv.ParseUint(productIdStr, 10, 0) // set base:10 for decimal and bitSize:0 auto size
+	productId, err := parseProductID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product ID format"})
 		return
 	}
 
@@ -127,8 +133,7 @@ func UpdateProduct(c *gin.Context) {
 	}
 
 	// Bind the incoming JSON to the input struct
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input", "details": err.Error()})
+	if !bindJSON(c, &input) {
 		return
 	}
 
@@ -152,8 +157,7 @@ func UpdateProduct(c *gin.Context) {
 	// Only save if there were changes made to the product
 	if updated {
 		if err := database.DB.Save(&product).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not update product"})
-			log.Println(err.Error())
+			handleDBError(c, err, "Could not update product")
 			return
 		}
 
