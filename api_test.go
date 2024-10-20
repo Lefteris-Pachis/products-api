@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +58,8 @@ func TestCreateProduct(t *testing.T) {
 	assert.Equal(t, product.Price, response.Product.Price)
 	assert.NotZero(t, response.Product.CreatedAt)
 	assert.NotZero(t, response.Product.UpdatedAt)
+
+	cleanupProducts(t)
 }
 
 func TestGetProducts(t *testing.T) {
@@ -74,8 +77,6 @@ func TestGetProducts(t *testing.T) {
 	testRouter.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-
-	//t.Logf("Response body: %s", w.Body.String())
 
 	var response GetProductsResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
@@ -97,6 +98,111 @@ func TestGetProducts(t *testing.T) {
 		}
 	}
 	assert.Equal(t, len(createdProductIDs), foundProducts, "Not all created products were found in the response")
+
+	cleanupProducts(t)
+}
+
+func TestGetProductsPagination(t *testing.T) {
+	// Create a larger set of test products
+	var testProducts []models.Product
+	for i := 1; i <= 25; i++ {
+		testProducts = append(testProducts, models.Product{
+			Name:        fmt.Sprintf("Test Product %d", i),
+			Description: fmt.Sprintf("Description %d", i),
+			Price:       float64(i) * 10.0,
+		})
+	}
+
+	createTestProducts(t, testProducts)
+
+	// Test cases for different pagination scenarios
+	testCases := []struct {
+		name          string
+		page          int
+		limit         int
+		expectedCount int
+	}{
+		{"First page with 10 items", 1, 10, 10},
+		{"Second page with 10 items", 2, 10, 10},
+		{"Third page with 10 items (only 5 left)", 3, 10, 5},
+		{"First page with 20 items", 1, 20, 20},
+		{"Second page with 20 items (only 5 left)", 2, 20, 5},
+		{"Page beyond data range", 4, 10, 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			url := fmt.Sprintf("/products?page=%d&limit=%d", tc.page, tc.limit)
+			req, _ := http.NewRequest("GET", url, nil)
+			w := httptest.NewRecorder()
+			testRouter.ServeHTTP(w, req)
+
+			// Check response
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			var response GetProductsResponse
+			err := json.Unmarshal(w.Body.Bytes(), &response)
+			assert.NoError(t, err)
+
+			assert.Equal(t, tc.expectedCount, len(response.Data), "Unexpected number of products returned")
+			assert.Equal(t, tc.page, response.Page, "Unexpected page number")
+			assert.Equal(t, tc.limit, response.Limit, "Unexpected limit")
+			assert.Equal(t, len(testProducts), response.Total, "Unexpected total count")
+
+			// Check if the returned products are the correct ones for this page
+			if len(response.Data) > 0 {
+				firstProductID := response.Data[0].ID
+				expectedFirstProductID := uint((tc.page-1)*tc.limit + 1)
+				assert.Equal(t, expectedFirstProductID, firstProductID, "Unexpected first product ID for this page")
+			}
+		})
+	}
+	cleanupProducts(t)
+}
+
+func TestDeleteProduct(t *testing.T) {
+	// Create a test product
+	testProduct := models.Product{
+		Name:        "Test Delete Product",
+		Description: "This product will be deleted",
+		Price:       99.99,
+	}
+
+	createdProductIDs := createTestProducts(t, []models.Product{testProduct})
+	assert.Len(t, createdProductIDs, 1)
+	productID := createdProductIDs[0]
+
+	// Make delete request
+	url := fmt.Sprintf("/products/%d", productID)
+	req, _ := http.NewRequest("DELETE", url, nil)
+	w := httptest.NewRecorder()
+	testRouter.ServeHTTP(w, req)
+
+	// Check response is 200
+	assert.Equal(t, http.StatusOK, w.Code)
+	var response map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "Product deleted successfully", response["message"])
+
+	// Verify product is deleted from database
+	var deletedProduct models.Product
+	result := database.DB.First(&deletedProduct, productID)
+	assert.Error(t, result.Error)
+	assert.Equal(t, "record not found", result.Error.Error())
+
+	// Try to delete the same product again (should return not found)
+	req, _ = http.NewRequest("DELETE", url, nil)
+	w = httptest.NewRecorder()
+	testRouter.ServeHTTP(w, req)
+
+	// Check response is 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Equal(t, "Product not found", response["error"])
+
+	cleanupProducts(t)
 }
 
 func createTestProducts(t *testing.T, products []models.Product) []uint {
@@ -108,4 +214,9 @@ func createTestProducts(t *testing.T, products []models.Product) []uint {
 		createdIDs = append(createdIDs, p.ID)
 	}
 	return createdIDs
+}
+
+func cleanupProducts(t *testing.T) {
+	result := database.DB.Exec("TRUNCATE TABLE products RESTART IDENTITY")
+	assert.NoError(t, result.Error, "Failed to truncate products table")
 }
