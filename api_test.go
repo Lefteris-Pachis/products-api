@@ -13,7 +13,7 @@ import (
 )
 
 // Define structs to match the responses
-type CreateProductResponse struct {
+type CreateUpdateProductResponse struct {
 	Message string         `json:"message"`
 	Product models.Product `json:"product"`
 }
@@ -46,7 +46,7 @@ func TestCreateProduct(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w.Code)
 
 	// Parse response body
-	var response CreateProductResponse
+	var response CreateUpdateProductResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 
@@ -201,6 +201,135 @@ func TestDeleteProduct(t *testing.T) {
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Equal(t, "Product not found", response["error"])
+
+	cleanupProducts(t)
+}
+
+func TestGetProductById(t *testing.T) {
+	// Create a test product
+	testProduct := models.Product{
+		Name:        "Test Get Product",
+		Description: "This is a test product for Get operation",
+		Price:       29.99,
+	}
+
+	createdProductIDs := createTestProducts(t, []models.Product{testProduct})
+	assert.Len(t, createdProductIDs, 1)
+	productID := createdProductIDs[0]
+
+	// Make request to get the product by ID
+	url := fmt.Sprintf("/products/%d", productID)
+	req, _ := http.NewRequest("GET", url, nil)
+	w := httptest.NewRecorder()
+	testRouter.ServeHTTP(w, req)
+
+	// Check response is 200
+	assert.Equal(t, http.StatusOK, w.Code)
+	var response models.Product
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+
+	// Verify the retrieved product details
+	assert.Equal(t, productID, response.ID)
+	assert.Equal(t, testProduct.Name, response.Name)
+	assert.Equal(t, testProduct.Description, response.Description)
+	assert.Equal(t, testProduct.Price, response.Price)
+	assert.NotZero(t, response.CreatedAt)
+	assert.NotZero(t, response.UpdatedAt)
+
+	// Test getting a non-existent product
+	nonExistentURL := "/products/9999"
+	req, _ = http.NewRequest("GET", nonExistentURL, nil)
+	w = httptest.NewRecorder()
+	testRouter.ServeHTTP(w, req)
+
+	// Check response is 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	var errorResponse map[string]string
+	err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
+	assert.NoError(t, err)
+	assert.Equal(t, "Product not found", errorResponse["error"])
+
+	cleanupProducts(t)
+}
+
+func TestUpdateProduct(t *testing.T) {
+	// Create a test product
+	testProduct := models.Product{
+		Name:        "Original Product",
+		Description: "This is the original description",
+		Price:       19.99,
+	}
+
+	createdProductIDs := createTestProducts(t, []models.Product{testProduct})
+	assert.Len(t, createdProductIDs, 1)
+	productID := createdProductIDs[0]
+
+	// Prepare update data
+	updateData := map[string]interface{}{
+		"name":        "Updated Product",
+		"description": "This is the updated description",
+		"price":       29.99,
+	}
+	jsonValue, _ := json.Marshal(updateData)
+
+	// Make request to update the product
+	url := fmt.Sprintf("/products/%d", productID)
+	req, _ := http.NewRequest("PATCH", url, bytes.NewBuffer(jsonValue))
+	w := httptest.NewRecorder()
+	testRouter.ServeHTTP(w, req)
+
+	// Check response is 200
+	assert.Equal(t, http.StatusOK, w.Code)
+	var response CreateUpdateProductResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+
+	// Verify the response message
+	assert.Equal(t, "Product updated successfully", response.Message)
+
+	// Verify the updated product details
+	assert.Equal(t, productID, response.Product.ID)
+	assert.Equal(t, updateData["name"], response.Product.Name)
+	assert.Equal(t, updateData["description"], response.Product.Description)
+	assert.Equal(t, updateData["price"], response.Product.Price)
+	assert.NotEqual(t, response.Product.CreatedAt, response.Product.UpdatedAt)
+
+	// Test updating a non-existent product
+	nonExistentURL := "/products/9999"
+	req, _ = http.NewRequest("PATCH", nonExistentURL, bytes.NewBuffer(jsonValue))
+	w = httptest.NewRecorder()
+	testRouter.ServeHTTP(w, req)
+
+	// Check response is 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	var errorResponse map[string]string
+	err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
+	assert.NoError(t, err)
+	assert.Equal(t, "Product not found", errorResponse["error"])
+
+	// Test partial update
+	partialUpdateData := map[string]float64{
+		"price": 39.99,
+	}
+	jsonValue, _ = json.Marshal(partialUpdateData)
+	req, _ = http.NewRequest("PATCH", url, bytes.NewBuffer(jsonValue))
+	w = httptest.NewRecorder()
+	testRouter.ServeHTTP(w, req)
+
+	// Check response is 200
+	assert.Equal(t, http.StatusOK, w.Code)
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+
+	// Verify the response message for partial update
+	assert.Equal(t, "Product updated successfully", response.Message)
+
+	// Verify the partially updated product details
+	assert.Equal(t, productID, response.Product.ID)
+	assert.Equal(t, updateData["name"], response.Product.Name)
+	assert.Equal(t, updateData["description"], response.Product.Description)
+	assert.Equal(t, partialUpdateData["price"], response.Product.Price)
 
 	cleanupProducts(t)
 }
