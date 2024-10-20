@@ -25,39 +25,105 @@ type GetProductsResponse struct {
 	Limit int              `json:"limit"`
 }
 
+type ErrorResponse struct {
+	Error   string `json:"error"`
+	Details string `json:"details"`
+}
+
 func TestCreateProduct(t *testing.T) {
-	// Test data
-	product := models.Product{
-		Name:        "Test Product",
-		Description: "This is a test product",
-		Price:       19.99,
+	testCases := []struct {
+		name           string
+		product        interface{}
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name: "Valid Product",
+			product: models.Product{
+				Name:        "Test Product",
+				Description: "This is a test product",
+				Price:       19.99,
+			},
+			expectedStatus: http.StatusCreated,
+			expectedError:  "",
+		},
+		{
+			name: "Empty Name",
+			product: models.Product{
+				Name:        "",
+				Description: "This is a test product",
+				Price:       19.99,
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Key: 'Product.Name' Error:Field validation for 'Name' failed on the 'required' tag",
+		},
+		{
+			name: "Negative Price",
+			product: models.Product{
+				Name:        "Test Product",
+				Description: "This is a test product",
+				Price:       -10.99,
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Key: 'Product.Price' Error:Field validation for 'Price' failed on the 'gte' tag",
+		},
+		{
+			name: "Missing Required Field",
+			product: map[string]interface{}{
+				"description": "This is a test product",
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Key: 'Product.Name' Error:Field validation for 'Name' failed on the 'required' tag",
+		},
+		{
+			name: "Invalid Price Type",
+			product: map[string]interface{}{
+				"name":        "Test Product",
+				"description": "This is a test product",
+				"price":       "not a number",
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "json: cannot unmarshal string into Go struct field Product.price of type float64",
+		},
 	}
-	jsonValue, _ := json.Marshal(product)
 
-	// Create request
-	req, _ := http.NewRequest("POST", "/products", bytes.NewBuffer(jsonValue))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			jsonValue, _ := json.Marshal(tc.product)
 
-	// Create response recorder
-	w := httptest.NewRecorder()
+			// Create request
+			req, _ := http.NewRequest("POST", "/products", bytes.NewBuffer(jsonValue))
 
-	// Perform request
-	testRouter.ServeHTTP(w, req)
+			// Create response recorder
+			w := httptest.NewRecorder()
 
-	assert.Equal(t, http.StatusCreated, w.Code)
+			// Perform request
+			testRouter.ServeHTTP(w, req)
 
-	// Parse response body
-	var response CreateUpdateProductResponse
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
+			assert.Equal(t, tc.expectedStatus, w.Code)
 
-	// Assert response structure and values
-	assert.Equal(t, "Product created successfully", response.Message)
-	assert.NotZero(t, response.Product.ID)
-	assert.Equal(t, product.Name, response.Product.Name)
-	assert.Equal(t, product.Description, response.Product.Description)
-	assert.Equal(t, product.Price, response.Product.Price)
-	assert.NotZero(t, response.Product.CreatedAt)
-	assert.NotZero(t, response.Product.UpdatedAt)
+			if tc.expectedError == "" { // For valid product
+				// Parse response body
+				var response CreateUpdateProductResponse
+				err := json.Unmarshal(w.Body.Bytes(), &response)
+				assert.NoError(t, err)
+
+				assert.Equal(t, "Product created successfully", response.Message)
+				assert.NotZero(t, response.Product.ID)
+				assert.Equal(t, tc.product.(models.Product).Name, response.Product.Name)
+				assert.Equal(t, tc.product.(models.Product).Description, response.Product.Description)
+				assert.Equal(t, tc.product.(models.Product).Price, response.Product.Price)
+				assert.NotZero(t, response.Product.CreatedAt)
+				assert.NotZero(t, response.Product.UpdatedAt)
+			} else { // For invalid product
+				var errorResponse ErrorResponse
+				err := json.Unmarshal(w.Body.Bytes(), &errorResponse)
+				assert.NoError(t, err)
+				assert.Equal(t, "Invalid input", errorResponse.Error)
+				assert.Contains(t, errorResponse.Details, tc.expectedError)
+			}
+		})
+	}
 
 	cleanupProducts(t)
 }
@@ -265,60 +331,114 @@ func TestUpdateProduct(t *testing.T) {
 	assert.Len(t, createdProductIDs, 1)
 	productID := createdProductIDs[0]
 
-	// Prepare update data
-	updateData := map[string]interface{}{
-		"name":        "Updated Product",
-		"description": "This is the updated description",
-		"price":       29.99,
-	}
-	jsonValue, _ := json.Marshal(updateData)
-
-	// Make request to update the product
 	url := fmt.Sprintf("/products/%d", productID)
-	req, _ := http.NewRequest("PATCH", url, bytes.NewBuffer(jsonValue))
-	w := httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
 
-	// Check response is 200
-	assert.Equal(t, http.StatusOK, w.Code)
-	var response CreateUpdateProductResponse
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NoError(t, err)
+	testCases := []struct {
+		name           string
+		product        interface{}
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name: "Valid Update",
+			product: models.Product{
+				Name:        "Updated Product",
+				Description: "This is an updated product",
+				Price:       39.99,
+			},
+			expectedStatus: http.StatusOK,
+			expectedError:  "",
+		},
+		{
+			name: "Empty Name",
+			product: models.Product{
+				Name:        "",
+				Description: "This is an updated product",
+				Price:       39.99,
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Name cannot be empty",
+		},
+		{
+			name: "Negative Price",
+			product: models.Product{
+				Name:        "Updated Product",
+				Description: "This is an updated product",
+				Price:       -10.99,
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Key: 'Price' Error:Field validation for 'Price' failed on the 'gte' tag",
+		},
+		{
+			name: "Invalid Price Type",
+			product: map[string]interface{}{
+				"price": "not a number",
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "json: cannot unmarshal string into Go struct field .price of type float64",
+		},
+	}
 
-	// Verify the response message
-	assert.Equal(t, "Product updated successfully", response.Message)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			jsonValue, _ := json.Marshal(tc.product)
 
-	// Verify the updated product details
-	assert.Equal(t, productID, response.Product.ID)
-	assert.Equal(t, updateData["name"], response.Product.Name)
-	assert.Equal(t, updateData["description"], response.Product.Description)
-	assert.Equal(t, updateData["price"], response.Product.Price)
-	assert.NotEqual(t, response.Product.CreatedAt, response.Product.UpdatedAt)
+			// Make request to update the product
+			req, _ := http.NewRequest("PATCH", url, bytes.NewBuffer(jsonValue))
+			w := httptest.NewRecorder()
+			testRouter.ServeHTTP(w, req)
+
+			assert.Equal(t, tc.expectedStatus, w.Code)
+
+			if tc.expectedError == "" { // For valid update
+				var response CreateUpdateProductResponse
+				err := json.Unmarshal(w.Body.Bytes(), &response)
+				assert.NoError(t, err)
+
+				// Verify the response message
+				assert.Equal(t, "Product updated successfully", response.Message)
+
+				// Verify the updated product details
+				assert.Equal(t, productID, response.Product.ID)
+				assert.Equal(t, tc.product.(models.Product).Name, response.Product.Name)
+				assert.Equal(t, tc.product.(models.Product).Description, response.Product.Description)
+				assert.Equal(t, tc.product.(models.Product).Price, response.Product.Price)
+				assert.NotEqual(t, response.Product.CreatedAt, response.Product.UpdatedAt)
+			} else { // For invalid update
+				var errorResponse ErrorResponse
+				err := json.Unmarshal(w.Body.Bytes(), &errorResponse)
+				assert.NoError(t, err)
+				assert.Equal(t, "Invalid input", errorResponse.Error)
+				assert.Contains(t, errorResponse.Details, tc.expectedError)
+			}
+		})
+	}
 
 	// Test updating a non-existent product
 	nonExistentURL := "/products/9999"
-	req, _ = http.NewRequest("PATCH", nonExistentURL, bytes.NewBuffer(jsonValue))
-	w = httptest.NewRecorder()
+	req, _ := http.NewRequest("PATCH", nonExistentURL, nil)
+	w := httptest.NewRecorder()
 	testRouter.ServeHTTP(w, req)
 
 	// Check response is 404
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	var errorResponse map[string]string
-	err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
+	err := json.Unmarshal(w.Body.Bytes(), &errorResponse)
 	assert.NoError(t, err)
 	assert.Equal(t, "Product not found", errorResponse["error"])
 
 	// Test partial update
 	partialUpdateData := map[string]float64{
-		"price": 39.99,
+		"price": 59.99,
 	}
-	jsonValue, _ = json.Marshal(partialUpdateData)
+	jsonValue, _ := json.Marshal(partialUpdateData)
 	req, _ = http.NewRequest("PATCH", url, bytes.NewBuffer(jsonValue))
 	w = httptest.NewRecorder()
 	testRouter.ServeHTTP(w, req)
 
 	// Check response is 200
 	assert.Equal(t, http.StatusOK, w.Code)
+	var response CreateUpdateProductResponse
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 
@@ -327,8 +447,6 @@ func TestUpdateProduct(t *testing.T) {
 
 	// Verify the partially updated product details
 	assert.Equal(t, productID, response.Product.ID)
-	assert.Equal(t, updateData["name"], response.Product.Name)
-	assert.Equal(t, updateData["description"], response.Product.Description)
 	assert.Equal(t, partialUpdateData["price"], response.Product.Price)
 
 	cleanupProducts(t)

@@ -168,7 +168,7 @@ func UpdateProduct(c *gin.Context) {
 	// Create a temporary struct to hold the updated values
 	var input struct {
 		Name        *string  `json:"name"`
-		Price       *float64 `json:"price"`
+		Price       *float64 `json:"price" binding:"gte=0"`
 		Description *string  `json:"description"`
 	}
 
@@ -181,9 +181,15 @@ func UpdateProduct(c *gin.Context) {
 	var updated bool
 
 	// Apply updates only if they are provided
-	if input.Name != nil && *input.Name != product.Name {
-		product.Name = *input.Name
-		updated = true
+	if input.Name != nil {
+		if *input.Name == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input", "details": "Name cannot be empty"})
+			return
+		}
+		if *input.Name != product.Name {
+			product.Name = *input.Name
+			updated = true
+		}
 	}
 	if input.Price != nil && *input.Price != product.Price {
 		product.Price = *input.Price
