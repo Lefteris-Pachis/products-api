@@ -19,6 +19,10 @@ To run the application using Docker Compose:
 cp .env.example .env
 docker-compose up -d --build
 ```
+You may have to restart the api container by running:
+```sh
+docker-compose restart api
+```
 
 You can access the endpoints on ``http://localhost:8080``
 
