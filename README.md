@@ -37,7 +37,7 @@ sed -i 's/\r$//' run_tests.sh
 ```
 
 ## API Endpoints
-- `GET /products`: List all products (with pagination)
+- `GET /products?page=1&limit=10`: List all products (with pagination)
 - `GET /products/:id`: Get a specific product
 - `POST /products`: Create a new product
 - `PATCH /products/:id`: Update an existing product
