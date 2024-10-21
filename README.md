@@ -32,6 +32,7 @@ There is also a postman collection: `products-api.postman_collection.json` that 
 To run the tests you have to run the following commands:
 ```sh
 chmod +x run_tests.sh
+sed -i 's/\r$//' run_tests.sh
 ./run_tests.sh
 ```
 
